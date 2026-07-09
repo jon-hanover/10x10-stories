@@ -427,7 +427,13 @@
       const targetBullet = page.bullets[targetIdx];
       const before = targetBullet.text.slice(0, start);
       const after = targetBullet.text.slice(end);
-      const lines = pasted.split(/\r\n|\r|\n/);
+      // Browsers commonly insert blank lines when serializing a copied
+      // selection that spans block-level elements (each bullet's text lives
+      // in its own <div>) — those are copy artifacts, not intentional empty
+      // bullets, so drop them rather than pasting a run of blank bullets.
+      const rawLines = pasted.split(/\r\n|\r|\n/);
+      const nonBlankLines = rawLines.filter((l) => l.trim() !== '');
+      const lines = nonBlankLines.length > 0 ? nonBlankLines : rawLines;
 
       let finalBulletId, finalOffset;
       if (lines.length === 1) {
