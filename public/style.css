@@ -157,12 +157,22 @@ html, body {
   gap: 2px;
 }
 
-.icon-btn .star-count { font-size: 11px; font-weight: 700; }
-
 .icon-btn.starred, .icon-btn:hover { color: var(--star-gold); }
 
 .icon-btn.delete { color: rgba(0,0,0,0.35); font-size: 14px; }
 .icon-btn.delete:hover { color: var(--danger); }
+
+/* Star glyph/count are CSS-generated content, not real DOM text — so a text
+   selection that spans past a bullet's edge can never capture a star
+   character as if it were part of the note's text. */
+.star-toggle::before { content: '☆'; }
+.star-toggle.starred::before { content: '★'; }
+.star-toggle.has-count::after {
+  content: attr(data-count);
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 2px;
+}
 
 .bullet-list {
   list-style: none;
@@ -248,10 +258,16 @@ html, body {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
 }
 
-.bullet-star .star-count { font-size: 10px; font-weight: 700; }
+.bullet-star::before { content: '☆'; }
+.bullet-star.starred::before { content: '★'; }
+.bullet-star.has-count::after {
+  content: attr(data-count);
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 2px;
+}
 
 .bullet-item:hover .bullet-star { visibility: visible; }
 .bullet-star.starred { visibility: visible; color: var(--star-gold); }

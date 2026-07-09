@@ -338,19 +338,20 @@
     });
   }
 
+  // The star glyph and count are rendered via CSS generated content (see
+  // .bullet-star::before/::after), not real DOM text — otherwise a text
+  // selection that merely spans past a bullet's edge would capture the star
+  // character as if it were part of the note's text.
   function renderStarButton(btn, starredBy) {
     const arr = starredBy || [];
     const mine = arr.includes(getUserId());
     btn.classList.toggle('starred', mine);
-    btn.innerHTML = '';
-    const glyph = document.createElement('span');
-    glyph.textContent = mine ? '★' : '☆';
-    btn.appendChild(glyph);
     if (arr.length > 0) {
-      const count = document.createElement('span');
-      count.className = 'star-count';
-      count.textContent = arr.length;
-      btn.appendChild(count);
+      btn.classList.add('has-count');
+      btn.dataset.count = String(arr.length);
+    } else {
+      btn.classList.remove('has-count');
+      delete btn.dataset.count;
     }
   }
 
@@ -392,6 +393,63 @@
       renderBulletContent(text, bullet.text, isOverBulletCountCap(page, bullet));
       setCaretCharOffset(text, offset);
       scheduleSend(page);
+    });
+
+    // Each bullet is its own contenteditable, so default paste has no way to
+    // know about sibling bullets — a multi-line paste (or one replacing a
+    // cross-bullet selection) would otherwise land as one run-on bullet.
+    // Split it back out into one bullet per line, matching what was copied.
+    text.addEventListener('paste', (e) => {
+      const clip = e.clipboardData || window.clipboardData;
+      const pasted = clip ? clip.getData('text/plain') : '';
+      if (!pasted) return;
+      const span = getMultiBulletSelectionSpan(page);
+      if (!span && !pasted.includes('\n') && !pasted.includes('\r')) return; // plain single-line paste — let native handle it
+
+      e.preventDefault();
+      shiftNav = null;
+
+      let targetIdx, start, end;
+      if (span) {
+        const startBullet = page.bullets[span.startIdx];
+        const endBullet = page.bullets[span.endIdx];
+        startBullet.text = startBullet.text.slice(0, span.startOffset) + endBullet.text.slice(span.endOffset);
+        page.bullets.splice(span.startIdx + 1, span.endIdx - span.startIdx);
+        targetIdx = span.startIdx;
+        start = end = span.startOffset;
+      } else {
+        targetIdx = page.bullets.findIndex((b) => b.id === bullet.id);
+        const range = getCaretRange(text);
+        start = range.start;
+        end = range.end;
+      }
+
+      const targetBullet = page.bullets[targetIdx];
+      const before = targetBullet.text.slice(0, start);
+      const after = targetBullet.text.slice(end);
+      const lines = pasted.split(/\r\n|\r|\n/);
+
+      let finalBulletId, finalOffset;
+      if (lines.length === 1) {
+        targetBullet.text = before + lines[0] + after;
+        finalBulletId = targetBullet.id;
+        finalOffset = (before + lines[0]).length;
+      } else {
+        targetBullet.text = before + lines[0];
+        const newBullets = [];
+        for (let i = 1; i < lines.length; i++) {
+          const lineText = i === lines.length - 1 ? lines[i] + after : lines[i];
+          newBullets.push({ id: uuid(), text: lineText, starredBy: [], indent: targetBullet.indent });
+        }
+        page.bullets.splice(targetIdx + 1, 0, ...newBullets);
+        finalBulletId = newBullets[newBullets.length - 1].id;
+        finalOffset = lines[lines.length - 1].length;
+      }
+
+      rebuildBulletList(page);
+      const finalEl = pageEl(page.id).querySelector(`[data-bullet-id="${finalBulletId}"] .bullet-text`);
+      if (finalEl) setCaretCharOffset(finalEl, finalOffset);
+      socket.emit('page:update', page);
     });
 
     text.addEventListener('keydown', (e) => {
@@ -610,7 +668,7 @@
     actions.className = 'page-header-actions';
 
     const starBtn = document.createElement('button');
-    starBtn.className = 'icon-btn';
+    starBtn.className = 'icon-btn star-toggle';
     starBtn.title = 'Star this page';
     renderStarButton(starBtn, page.starredBy);
     starBtn.addEventListener('click', () => {
@@ -1043,7 +1101,7 @@
     entry.data.starredBy = page.starredBy;
     entry.data.author = page.author;
     const el = entry.el;
-    const starBtn = el.querySelector('.icon-btn');
+    const starBtn = el.querySelector('.star-toggle');
     renderStarButton(starBtn, entry.data.starredBy);
     rebuildBulletList(entry.data);
   });

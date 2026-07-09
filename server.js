@@ -4,7 +4,10 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
-const DATA_DIR = path.join(__dirname, 'data');
+// In production, set DATA_DIR to the mount path of a Render persistent disk
+// (e.g. /var/data) so board data survives redeploys and restarts. Without it,
+// this falls back to a local folder that is NOT preserved across deploys.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'board.json');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
