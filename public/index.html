@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>10x10 Stories</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="appScreen" class="hidden">
+    <header class="toolbar">
+      <div class="toolbar-left">
+        <h1>10x10 Stories</h1>
+      </div>
+      <div class="toolbar-right">
+        <div class="zoom-controls">
+          <button id="zoomOutBtn" class="btn ghost icon-only" title="Zoom out (Ctrl/Cmd -)">&minus;</button>
+          <button id="zoomResetBtn" class="btn ghost" title="Reset zoom (Ctrl/Cmd 0)"><span id="zoomLabel">100%</span></button>
+          <button id="zoomInBtn" class="btn ghost icon-only" title="Zoom in (Ctrl/Cmd +)">+</button>
+        </div>
+        <button id="addPageBtn" class="btn primary">+ New Page</button>
+        <button id="nameBtn" class="btn ghost" title="Change your display name">
+          <span id="nameLabel">Anonymous</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="board" class="board">
+      <div id="pagesLayer" class="pages-layer"></div>
+    </main>
+  </div>
+
+  <div id="nameModal" class="entrance-screen hidden">
+    <div class="entrance-card">
+      <div class="entrance-brand">10x10 Stories</div>
+      <h2>What's your name?</h2>
+      <p>Shown on pages you add and stars you place.</p>
+      <input id="nameInput" type="text" maxlength="30" placeholder="e.g. Jon" />
+      <button id="nameSaveBtn" class="btn primary">Enter the board</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
