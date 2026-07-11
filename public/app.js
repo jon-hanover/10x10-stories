@@ -64,6 +64,26 @@
     return PALETTE[hash % PALETTE.length];
   }
 
+  // Each author's story numbers are assigned once at creation and never
+  // renumbered — deleting an earlier page never shifts a later one's number.
+  function nextStoryNumberForAuthor(authorId) {
+    let maxNum = 0;
+    pages.forEach(({ data }) => {
+      if (data.authorId === authorId && typeof data.storyNumber === 'number') {
+        maxNum = Math.max(maxNum, data.storyNumber);
+      }
+    });
+    return maxNum + 1;
+  }
+
+  function formatPageAuthorLabel(page) {
+    const name = page.author || 'Anonymous';
+    if (typeof page.storyNumber === 'number') {
+      return `${name}. Story ${page.storyNumber}.`;
+    }
+    return name;
+  }
+
   function openNameModal() {
     nameInput.value = getUsername();
     nameModal.classList.remove('hidden');
@@ -156,6 +176,56 @@
     range.selectNodeContents(container);
     range.setEnd(sel.focusNode, sel.focusOffset);
     return range.toString().length;
+  }
+
+  // The on-screen rect of the caret (collapsed to the selection's focus
+  // point), used to detect which visual line it's on and to preserve its
+  // horizontal position when arrow-navigating across a bullet boundary.
+  // Anchors via resolveNodeOffset (an actual text node + in-node offset)
+  // rather than sel.focusNode/focusOffset directly — a collapsed range at a
+  // container-boundary position (e.g. right after placeCaretAtEnd, or at the
+  // very end of a bullet's text) can otherwise report a degenerate 0-rect,
+  // which would make a bullet look like it has no last line at all.
+  function getFocusClientRect(container) {
+    const offset = getFocusCharOffset(container);
+    const { node, offset: nodeOffset } = resolveNodeOffset(container, offset);
+    const range = document.createRange();
+    try {
+      range.setStart(node, nodeOffset);
+      range.collapse(true);
+    } catch (err) {
+      return null;
+    }
+    const rects = range.getClientRects();
+    if (rects.length > 0) return rects[0];
+    return range.getBoundingClientRect();
+  }
+
+  function isAtFirstLine(el) {
+    if (!el.textContent) return true;
+    const caretRect = getFocusClientRect(el);
+    if (!caretRect) return true;
+    const elRect = el.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || caretRect.height || 16;
+    return (caretRect.top - elRect.top) < lineHeight * 0.5;
+  }
+
+  function isAtLastLine(el) {
+    if (!el.textContent) return true;
+    const caretRect = getFocusClientRect(el);
+    if (!caretRect) return true;
+    const elRect = el.getBoundingClientRect();
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || caretRect.height || 16;
+    return (elRect.bottom - caretRect.bottom) < lineHeight * 0.5;
+  }
+
+  function placeCaretAtNodeOffset(node, offset) {
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
   function getOffsetWithin(container, node, nodeOffset) {
@@ -523,11 +593,28 @@
           extendSelectionTo(targetEl, targetOffset);
           shiftNav = { page, originEl: text, index: targetIdx, offset: targetOffset };
         } else {
+          const atBoundary = direction === -1 ? isAtFirstLine(text) : isAtLastLine(text);
+          if (!atBoundary) return; // another visual line within this bullet — let native handle it
           const targetIdx = idx + direction;
           if (targetIdx < 0 || targetIdx >= page.bullets.length) return;
           e.preventDefault();
           const targetEl = bulletTextElByIndex(page, targetIdx);
-          if (targetEl) {
+          if (!targetEl) return;
+
+          let landed = false;
+          const caretRect = getFocusClientRect(text);
+          if (caretRect) {
+            const targetRect = targetEl.getBoundingClientRect();
+            const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
+            const targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            const point = caretFromPoint(caretRect.left, targetY);
+            if (point) {
+              targetEl.focus();
+              placeCaretAtNodeOffset(point.node, point.offset);
+              landed = true;
+            }
+          }
+          if (!landed) {
             const offset = getCaretCharOffset(text);
             setCaretCharOffset(targetEl, Math.min(offset, targetEl.textContent.length));
           }
@@ -668,7 +755,7 @@
 
     const author = document.createElement('span');
     author.className = 'page-author';
-    author.textContent = page.author || 'Anonymous';
+    author.textContent = formatPageAuthorLabel(page);
 
     const actions = document.createElement('div');
     actions.className = 'page-header-actions';
@@ -1059,13 +1146,15 @@
     const count = pages.size;
     const x = board.scrollLeft / zoom + 60 + (count % 6) * 30;
     const y = board.scrollTop / zoom + 60 + (count % 6) * 30;
+    const myAuthorId = getUserId();
     const page = {
       id: uuid(),
       x, y,
       zIndex: ++topZ,
       author: getUsername() || 'Anonymous',
-      authorId: getUserId(),
-      color: colorForUser(getUserId()),
+      authorId: myAuthorId,
+      storyNumber: nextStoryNumberForAuthor(myAuthorId),
+      color: colorForUser(myAuthorId),
       starredBy: [],
       bullets: [{ id: uuid(), text: '', starredBy: [], indent: 0 }],
     };
