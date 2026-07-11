@@ -219,6 +219,26 @@
     return (elRect.bottom - caretRect.bottom) < lineHeight * 0.5;
   }
 
+  // Our custom line-by-line arrow navigation hit-tests a viewport Y
+  // coordinate via caretFromPoint — unlike native arrow-key movement, it
+  // never auto-scrolls to reveal the destination first. Without this, moving
+  // several lines in one direction eventually targets a point below/above
+  // the visible board, caretFromPoint returns null, and further presses get
+  // permanently stuck. Scrolls just enough to bring that Y into view.
+  function ensureYVisible(y) {
+    const boardRect = board.getBoundingClientRect();
+    const margin = 24;
+    if (y < boardRect.top + margin) {
+      board.scrollTop -= (boardRect.top + margin - y);
+      return true;
+    }
+    if (y > boardRect.bottom - margin) {
+      board.scrollTop += (y - (boardRect.bottom - margin));
+      return true;
+    }
+    return false;
+  }
+
   function placeCaretAtNodeOffset(node, offset) {
     const range = document.createRange();
     range.setStart(node, offset);
@@ -463,7 +483,7 @@
     star.addEventListener('click', () => {
       toggleStar(bullet);
       renderStarButton(star, bullet.starredBy);
-      socket.emit('page:update', page);
+      socket.emit('bullet:star', { pageId: page.id, bulletId: bullet.id, uid: getUserId() });
     });
 
     text.addEventListener('input', () => {
@@ -612,12 +632,30 @@
             const caretRect = getFocusClientRect(curEl);
             if (!caretRect) return;
             const lineHeight = parseFloat(getComputedStyle(curEl).lineHeight) || caretRect.height || 16;
-            const targetY = caretRect.top + direction * lineHeight;
+            let targetY = caretRect.top + direction * lineHeight;
+            if (ensureYVisible(targetY)) {
+              const refreshed = getFocusClientRect(curEl);
+              if (refreshed) targetY = refreshed.top + direction * lineHeight;
+            }
             const point = caretFromPoint(caretRect.left, targetY);
-            if (!point) return;
-            extendSelectionToNodeOffset(point.node, point.offset);
-            const newOffset = getOffsetWithin(curEl, point.node, point.offset);
-            shiftNav = { page, originEl: text, index: curIndex, offset: newOffset };
+            if (point) {
+              extendSelectionToNodeOffset(point.node, point.offset);
+              const newOffset = getOffsetWithin(curEl, point.node, point.offset);
+              shiftNav = { page, originEl: text, index: curIndex, offset: newOffset };
+              return;
+            }
+            // Last-resort fallback so this can never get permanently stuck —
+            // approximate one line's worth of characters instead of a pixel
+            // position.
+            const curOffset = getFocusCharOffset(curEl);
+            const elRect = curEl.getBoundingClientRect();
+            const numLines = Math.max(1, Math.round(elRect.height / lineHeight));
+            const approxCharsPerLine = Math.max(1, Math.round(curEl.textContent.length / numLines));
+            const fallbackOffset = direction === -1
+              ? Math.max(0, curOffset - approxCharsPerLine)
+              : Math.min(curEl.textContent.length, curOffset + approxCharsPerLine);
+            extendSelectionTo(curEl, fallbackOffset);
+            shiftNav = { page, originEl: text, index: curIndex, offset: fallbackOffset };
             return;
           }
 
@@ -630,9 +668,13 @@
           let landed = false;
           const caretRect = getFocusClientRect(curEl);
           if (caretRect) {
-            const targetRect = targetEl.getBoundingClientRect();
+            let targetRect = targetEl.getBoundingClientRect();
             const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
-            const targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            let targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            if (ensureYVisible(targetY)) {
+              targetRect = targetEl.getBoundingClientRect();
+              targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            }
             const point = caretFromPoint(caretRect.left, targetY);
             if (point) {
               extendSelectionToNodeOffset(point.node, point.offset);
@@ -659,9 +701,13 @@
           let landed = false;
           const caretRect = getFocusClientRect(text);
           if (caretRect) {
-            const targetRect = targetEl.getBoundingClientRect();
+            let targetRect = targetEl.getBoundingClientRect();
             const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
-            const targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            let targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            if (ensureYVisible(targetY)) {
+              targetRect = targetEl.getBoundingClientRect();
+              targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            }
             const point = caretFromPoint(caretRect.left, targetY);
             if (point) {
               targetEl.focus();
@@ -822,7 +868,7 @@
     starBtn.addEventListener('click', () => {
       toggleStar(page);
       renderStarButton(starBtn, page.starredBy);
-      socket.emit('page:update', page);
+      socket.emit('page:star', { id: page.id, uid: getUserId() });
     });
 
     const deleteBtn = document.createElement('button');
@@ -1254,6 +1300,25 @@
     const starBtn = el.querySelector('.star-toggle');
     renderStarButton(starBtn, entry.data.starredBy);
     rebuildBulletList(entry.data);
+  });
+
+  socket.on('page:star', ({ id, starredBy }) => {
+    const entry = pages.get(id);
+    if (!entry) return;
+    entry.data.starredBy = starredBy;
+    const starBtn = entry.el.querySelector('.star-toggle');
+    if (starBtn) renderStarButton(starBtn, starredBy);
+  });
+
+  socket.on('bullet:star', ({ pageId, bulletId, starredBy }) => {
+    const entry = pages.get(pageId);
+    if (!entry) return;
+    const bullet = entry.data.bullets.find((b) => b.id === bulletId);
+    if (!bullet) return;
+    bullet.starredBy = starredBy;
+    const li = entry.el.querySelector(`[data-bullet-id="${bulletId}"]`);
+    const starBtn = li ? li.querySelector('.bullet-star') : null;
+    if (starBtn) renderStarButton(starBtn, starredBy);
   });
 
   socket.on('page:move', ({ id, x, y, zIndex }) => {

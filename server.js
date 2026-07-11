@@ -54,9 +54,47 @@ io.on('connection', (socket) => {
     if (!page || typeof page.id !== 'string') return;
     const idx = board.pages.findIndex((p) => p.id === page.id);
     if (idx === -1) return;
+
+    // Starring is handled by the dedicated page:star / bullet:star events below so
+    // that it stays atomic and isn't lost when it races a page:update — this
+    // client's snapshot may predate a star toggle another client already applied,
+    // so keep the server's own starredBy values instead of trusting the payload.
+    const existing = board.pages[idx];
+    page.starredBy = existing.starredBy || [];
+    const existingBulletStars = new Map(existing.bullets.map((b) => [b.id, b.starredBy]));
+    page.bullets.forEach((b) => {
+      if (existingBulletStars.has(b.id)) b.starredBy = existingBulletStars.get(b.id) || [];
+    });
+
     board.pages[idx] = page;
     saveBoard();
     socket.broadcast.emit('page:update', page);
+  });
+
+  socket.on('page:star', ({ id, uid } = {}) => {
+    if (typeof id !== 'string' || typeof uid !== 'string') return;
+    const p = board.pages.find((p) => p.id === id);
+    if (!p) return;
+    if (!Array.isArray(p.starredBy)) p.starredBy = [];
+    const idx = p.starredBy.indexOf(uid);
+    if (idx === -1) p.starredBy.push(uid);
+    else p.starredBy.splice(idx, 1);
+    saveBoard();
+    io.emit('page:star', { id, starredBy: p.starredBy });
+  });
+
+  socket.on('bullet:star', ({ pageId, bulletId, uid } = {}) => {
+    if (typeof pageId !== 'string' || typeof bulletId !== 'string' || typeof uid !== 'string') return;
+    const p = board.pages.find((p) => p.id === pageId);
+    if (!p) return;
+    const b = p.bullets.find((b) => b.id === bulletId);
+    if (!b) return;
+    if (!Array.isArray(b.starredBy)) b.starredBy = [];
+    const idx = b.starredBy.indexOf(uid);
+    if (idx === -1) b.starredBy.push(uid);
+    else b.starredBy.splice(idx, 1);
+    saveBoard();
+    io.emit('bullet:star', { pageId, bulletId, starredBy: b.starredBy });
   });
 
   socket.on('page:move', ({ id, x, y, zIndex }) => {
