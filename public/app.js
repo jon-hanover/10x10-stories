@@ -179,26 +179,36 @@
   }
 
   // The on-screen rect of the caret (collapsed to the selection's focus
-  // point), used to detect which visual line it's on and to preserve its
-  // horizontal position when arrow-navigating across a bullet boundary.
-  // Anchors via resolveNodeOffset (an actual text node + in-node offset)
-  // rather than sel.focusNode/focusOffset directly — a collapsed range at a
+  // point), used to detect which visual line it's on. Anchors via
+  // resolveNodeOffset (an actual text node + in-node offset) rather than
+  // sel.focusNode/focusOffset directly — a collapsed range at a
   // container-boundary position (e.g. right after placeCaretAtEnd, or at the
-  // very end of a bullet's text) can otherwise report a degenerate 0-rect,
-  // which would make a bullet look like it has no last line at all.
+  // very end of a bullet's text) can otherwise report a degenerate 0-rect.
+  // Separately, a collapsed range sitting exactly at the boundary of a
+  // whitespace-only text node (common here — bullets are tokenized into one
+  // text node per word/space) can also report zero client rects, even mid-
+  // paragraph. If the exact position gives nothing, nudge one character
+  // either way — vanishingly unlikely to cross a visual line boundary — to
+  // land on a real character with a real rect.
   function getFocusClientRect(container) {
     const offset = getFocusCharOffset(container);
-    const { node, offset: nodeOffset } = resolveNodeOffset(container, offset);
-    const range = document.createRange();
-    try {
-      range.setStart(node, nodeOffset);
-      range.collapse(true);
-    } catch (err) {
-      return null;
+    const totalLen = container.textContent.length;
+    const candidates = [offset, offset - 1, offset + 1].filter((o) => o >= 0 && o <= totalLen);
+    let lastRange = null;
+    for (const candidateOffset of candidates) {
+      const { node, offset: nodeOffset } = resolveNodeOffset(container, candidateOffset);
+      const range = document.createRange();
+      try {
+        range.setStart(node, nodeOffset);
+        range.collapse(true);
+      } catch (err) {
+        continue;
+      }
+      lastRange = range;
+      const rects = range.getClientRects();
+      if (rects.length > 0) return rects[0];
     }
-    const rects = range.getClientRects();
-    if (rects.length > 0) return rects[0];
-    return range.getBoundingClientRect();
+    return lastRange ? lastRange.getBoundingClientRect() : null;
   }
 
   function isAtFirstLine(el) {
@@ -219,26 +229,6 @@
     return (elRect.bottom - caretRect.bottom) < lineHeight * 0.5;
   }
 
-  // Our custom line-by-line arrow navigation hit-tests a viewport Y
-  // coordinate via caretFromPoint — unlike native arrow-key movement, it
-  // never auto-scrolls to reveal the destination first. Without this, moving
-  // several lines in one direction eventually targets a point below/above
-  // the visible board, caretFromPoint returns null, and further presses get
-  // permanently stuck. Scrolls just enough to bring that Y into view.
-  function ensureYVisible(y) {
-    const boardRect = board.getBoundingClientRect();
-    const margin = 24;
-    if (y < boardRect.top + margin) {
-      board.scrollTop -= (boardRect.top + margin - y);
-      return true;
-    }
-    if (y > boardRect.bottom - margin) {
-      board.scrollTop += (y - (boardRect.bottom - margin));
-      return true;
-    }
-    return false;
-  }
-
   function placeCaretAtNodeOffset(node, offset) {
     const range = document.createRange();
     range.setStart(node, offset);
@@ -246,15 +236,6 @@
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
-  }
-
-  function extendSelectionToNodeOffset(node, offset) {
-    const sel = window.getSelection();
-    if (!sel.rangeCount) {
-      placeCaretAtNodeOffset(node, offset);
-      return;
-    }
-    sel.extend(node, offset);
   }
 
   function getOffsetWithin(container, node, nodeOffset) {
@@ -605,14 +586,18 @@
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         const direction = e.key === 'ArrowUp' ? -1 : 1;
         if (e.shiftKey) {
-          // "current position" is wherever the selection's focus actually is —
-          // which correctly reflects prior extend() calls regardless of which
-          // bullet still has DOM focus — not necessarily this bullet.
-          let curIndex;
+          // "current position" is tracked as a character offset within a
+          // bullet, not a live pixel position — this stays fully
+          // deterministic and independent of scroll/viewport state, so
+          // extending a selection across many lines or bullets can never
+          // get stuck, jump unpredictably, or reset partway through.
+          let curIndex, curOffset;
           if (shiftNav && shiftNav.originEl === text && shiftNav.page === page) {
             curIndex = shiftNav.index;
+            curOffset = shiftNav.offset;
           } else {
             curIndex = idx;
+            curOffset = getFocusCharOffset(text);
           }
           const curEl = bulletTextElByIndex(page, curIndex);
           if (!curEl) return;
@@ -627,35 +612,18 @@
             }
             // Focus has already crossed into curEl, but DOM focus never
             // followed (it can't, across separate contenteditables) — so
-            // native can't move it a line further here; do it ourselves.
+            // native can't move it a line further here; do it ourselves,
+            // approximating one line's worth of characters.
             e.preventDefault();
-            const caretRect = getFocusClientRect(curEl);
-            if (!caretRect) return;
-            const lineHeight = parseFloat(getComputedStyle(curEl).lineHeight) || caretRect.height || 16;
-            let targetY = caretRect.top + direction * lineHeight;
-            if (ensureYVisible(targetY)) {
-              const refreshed = getFocusClientRect(curEl);
-              if (refreshed) targetY = refreshed.top + direction * lineHeight;
-            }
-            const point = caretFromPoint(caretRect.left, targetY);
-            if (point) {
-              extendSelectionToNodeOffset(point.node, point.offset);
-              const newOffset = getOffsetWithin(curEl, point.node, point.offset);
-              shiftNav = { page, originEl: text, index: curIndex, offset: newOffset };
-              return;
-            }
-            // Last-resort fallback so this can never get permanently stuck —
-            // approximate one line's worth of characters instead of a pixel
-            // position.
-            const curOffset = getFocusCharOffset(curEl);
+            const lineHeight = parseFloat(getComputedStyle(curEl).lineHeight) || 16;
             const elRect = curEl.getBoundingClientRect();
             const numLines = Math.max(1, Math.round(elRect.height / lineHeight));
             const approxCharsPerLine = Math.max(1, Math.round(curEl.textContent.length / numLines));
-            const fallbackOffset = direction === -1
+            const newOffset = direction === -1
               ? Math.max(0, curOffset - approxCharsPerLine)
               : Math.min(curEl.textContent.length, curOffset + approxCharsPerLine);
-            extendSelectionTo(curEl, fallbackOffset);
-            shiftNav = { page, originEl: text, index: curIndex, offset: fallbackOffset };
+            extendSelectionTo(curEl, newOffset);
+            shiftNav = { page, originEl: text, index: curIndex, offset: newOffset };
             return;
           }
 
@@ -664,31 +632,9 @@
           e.preventDefault();
           const targetEl = bulletTextElByIndex(page, targetIdx);
           if (!targetEl) return;
-
-          let landed = false;
-          const caretRect = getFocusClientRect(curEl);
-          if (caretRect) {
-            let targetRect = targetEl.getBoundingClientRect();
-            const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
-            let targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
-            if (ensureYVisible(targetY)) {
-              targetRect = targetEl.getBoundingClientRect();
-              targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
-            }
-            const point = caretFromPoint(caretRect.left, targetY);
-            if (point) {
-              extendSelectionToNodeOffset(point.node, point.offset);
-              const newOffset = getOffsetWithin(targetEl, point.node, point.offset);
-              shiftNav = { page, originEl: text, index: targetIdx, offset: newOffset };
-              landed = true;
-            }
-          }
-          if (!landed) {
-            const curOffset = getFocusCharOffset(curEl);
-            const targetOffset = Math.min(curOffset, targetEl.textContent.length);
-            extendSelectionTo(targetEl, targetOffset);
-            shiftNav = { page, originEl: text, index: targetIdx, offset: targetOffset };
-          }
+          const targetOffset = Math.min(curOffset, targetEl.textContent.length);
+          extendSelectionTo(targetEl, targetOffset);
+          shiftNav = { page, originEl: text, index: targetIdx, offset: targetOffset };
         } else {
           const atBoundary = direction === -1 ? isAtFirstLine(text) : isAtLastLine(text);
           if (!atBoundary) return; // another visual line within this bullet — let native handle it
@@ -701,13 +647,9 @@
           let landed = false;
           const caretRect = getFocusClientRect(text);
           if (caretRect) {
-            let targetRect = targetEl.getBoundingClientRect();
+            const targetRect = targetEl.getBoundingClientRect();
             const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
-            let targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
-            if (ensureYVisible(targetY)) {
-              targetRect = targetEl.getBoundingClientRect();
-              targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
-            }
+            const targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
             const point = caretFromPoint(caretRect.left, targetY);
             if (point) {
               targetEl.focus();
