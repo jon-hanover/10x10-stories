@@ -79,7 +79,7 @@
   function formatPageAuthorLabel(page) {
     const name = page.author || 'Anonymous';
     if (typeof page.storyNumber === 'number') {
-      return `${name}. Story ${page.storyNumber}.`;
+      return `${name}'s Story: ${page.storyNumber}`;
     }
     return name;
   }
@@ -226,6 +226,15 @@
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
+  }
+
+  function extendSelectionToNodeOffset(node, offset) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) {
+      placeCaretAtNodeOffset(node, offset);
+      return;
+    }
+    sel.extend(node, offset);
   }
 
   function getOffsetWithin(container, node, nodeOffset) {
@@ -576,22 +585,68 @@
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         const direction = e.key === 'ArrowUp' ? -1 : 1;
         if (e.shiftKey) {
-          let curIndex, curOffset;
+          // "current position" is wherever the selection's focus actually is —
+          // which correctly reflects prior extend() calls regardless of which
+          // bullet still has DOM focus — not necessarily this bullet.
+          let curIndex;
           if (shiftNav && shiftNav.originEl === text && shiftNav.page === page) {
             curIndex = shiftNav.index;
-            curOffset = shiftNav.offset;
           } else {
             curIndex = idx;
-            curOffset = getFocusCharOffset(text);
           }
+          const curEl = bulletTextElByIndex(page, curIndex);
+          if (!curEl) return;
+
+          const atBoundary = direction === -1 ? isAtFirstLine(curEl) : isAtLastLine(curEl);
+          if (!atBoundary) {
+            if (curEl === text) {
+              // DOM focus is genuinely here — let native shift+up/down extend
+              // the selection by one line within this bullet.
+              shiftNav = null;
+              return;
+            }
+            // Focus has already crossed into curEl, but DOM focus never
+            // followed (it can't, across separate contenteditables) — so
+            // native can't move it a line further here; do it ourselves.
+            e.preventDefault();
+            const caretRect = getFocusClientRect(curEl);
+            if (!caretRect) return;
+            const lineHeight = parseFloat(getComputedStyle(curEl).lineHeight) || caretRect.height || 16;
+            const targetY = caretRect.top + direction * lineHeight;
+            const point = caretFromPoint(caretRect.left, targetY);
+            if (!point) return;
+            extendSelectionToNodeOffset(point.node, point.offset);
+            const newOffset = getOffsetWithin(curEl, point.node, point.offset);
+            shiftNav = { page, originEl: text, index: curIndex, offset: newOffset };
+            return;
+          }
+
           const targetIdx = curIndex + direction;
           if (targetIdx < 0 || targetIdx >= page.bullets.length) return;
           e.preventDefault();
           const targetEl = bulletTextElByIndex(page, targetIdx);
           if (!targetEl) return;
-          const targetOffset = Math.min(curOffset, targetEl.textContent.length);
-          extendSelectionTo(targetEl, targetOffset);
-          shiftNav = { page, originEl: text, index: targetIdx, offset: targetOffset };
+
+          let landed = false;
+          const caretRect = getFocusClientRect(curEl);
+          if (caretRect) {
+            const targetRect = targetEl.getBoundingClientRect();
+            const targetLineHeight = parseFloat(getComputedStyle(targetEl).lineHeight) || caretRect.height || 16;
+            const targetY = direction === -1 ? (targetRect.bottom - targetLineHeight / 2) : (targetRect.top + targetLineHeight / 2);
+            const point = caretFromPoint(caretRect.left, targetY);
+            if (point) {
+              extendSelectionToNodeOffset(point.node, point.offset);
+              const newOffset = getOffsetWithin(targetEl, point.node, point.offset);
+              shiftNav = { page, originEl: text, index: targetIdx, offset: newOffset };
+              landed = true;
+            }
+          }
+          if (!landed) {
+            const curOffset = getFocusCharOffset(curEl);
+            const targetOffset = Math.min(curOffset, targetEl.textContent.length);
+            extendSelectionTo(targetEl, targetOffset);
+            shiftNav = { page, originEl: text, index: targetIdx, offset: targetOffset };
+          }
         } else {
           const atBoundary = direction === -1 ? isAtFirstLine(text) : isAtLastLine(text);
           if (!atBoundary) return; // another visual line within this bullet — let native handle it
