@@ -29,10 +29,23 @@ html, body {
   z-index: 1000;
 }
 
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .toolbar h1 {
   font-size: 18px;
   margin: 0;
   font-weight: 700;
+}
+
+.brand-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .toolbar-right {
