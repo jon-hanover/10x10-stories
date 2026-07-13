@@ -283,6 +283,7 @@ html, body {
 }
 
 .bullet-item:hover .bullet-star { visibility: visible; }
+.bullet-star.has-count { visibility: visible; }
 .bullet-star.starred { visibility: visible; color: var(--star-gold); }
 
 .hidden { display: none !important; }

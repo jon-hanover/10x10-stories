@@ -4,6 +4,7 @@
   const pagesLayer = document.getElementById('pagesLayer');
   const board = document.getElementById('board');
   const addPageBtn = document.getElementById('addPageBtn');
+  const printBtn = document.getElementById('printBtn');
   const nameBtn = document.getElementById('nameBtn');
   const nameLabel = document.getElementById('nameLabel');
   const nameModal = document.getElementById('nameModal');
@@ -1205,6 +1206,104 @@
     socket.emit('page:add', page);
     const firstBullet = pageEl(page.id).querySelector('.bullet-text');
     if (firstBullet) firstBullet.focus();
+  });
+
+  // ---------- print / export ----------
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function buildPrintHtml() {
+    const byAuthor = new Map();
+    pages.forEach((entry) => {
+      const page = entry.data;
+      if (!byAuthor.has(page.author)) byAuthor.set(page.author, []);
+      byAuthor.get(page.author).push(page);
+    });
+    const authors = Array.from(byAuthor.keys()).sort((a, b) => a.localeCompare(b));
+    authors.forEach((author) => {
+      byAuthor.get(author).sort((a, b) => a.storyNumber - b.storyNumber);
+    });
+
+    let totalBullets = 0;
+    let totalPageStars = 0;
+    let totalBulletStars = 0;
+    pages.forEach((entry) => {
+      const page = entry.data;
+      totalPageStars += (page.starredBy || []).length;
+      page.bullets.forEach((b) => {
+        if ((b.text || '').trim()) totalBullets += 1;
+        totalBulletStars += (b.starredBy || []).length;
+      });
+    });
+
+    const sections = authors.map((author) => {
+      const storiesHtml = byAuthor.get(author).map((page) => {
+        const pageStarCount = (page.starredBy || []).length;
+        const pageStarHtml = pageStarCount > 0
+          ? ` <span class="star">★ ${pageStarCount}</span>`
+          : '';
+        const bulletsHtml = page.bullets
+          .filter((b) => (b.text || '').trim())
+          .map((b) => {
+            const starCount = (b.starredBy || []).length;
+            const starHtml = starCount > 0 ? ` <span class="star">★ ${starCount}</span>` : '';
+            return `<li class="indent-${b.indent || 0}">${escapeHtml(b.text.trim())}${starHtml}</li>`;
+          })
+          .join('\n');
+        return `
+          <h2>${escapeHtml(author)}&rsquo;s Story: ${page.storyNumber}${pageStarHtml}</h2>
+          <ul>${bulletsHtml}</ul>
+        `;
+      }).join('\n');
+      return `<h1>${escapeHtml(author)}</h1>\n${storiesHtml}`;
+    }).join('\n<hr>\n');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>10x10 Stories — Summary</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #222; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 22px; margin: 32px 0 6px; border-bottom: 2px solid #ddd; padding-bottom: 6px; }
+  h1:first-of-type { margin-top: 0; }
+  h2 { font-size: 16px; margin: 18px 0 6px; }
+  ul { margin: 0 0 4px; padding-left: 22px; }
+  li { margin-bottom: 4px; line-height: 1.4; }
+  li.indent-1 { margin-left: 20px; }
+  li.indent-2 { margin-left: 40px; }
+  .star { color: #b8860b; font-weight: 700; white-space: nowrap; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 4px; }
+  .stats { font-weight: 700; margin-bottom: 20px; }
+  hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
+  .toolbar { margin-bottom: 20px; }
+  .toolbar button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; cursor: pointer; }
+  @media print { .toolbar { display: none; } body { margin: 0; max-width: none; } }
+</style>
+</head>
+<body>
+  <div class="toolbar"><button onclick="window.print()">Print this page</button></div>
+  <div class="subtitle">Raw story pages from the live board, grouped by author. Stars (★) show reactions at the page level and next to individual bullets.</div>
+  <div class="stats">${pages.size} story pages &middot; ${totalBullets} bullets &middot; ${totalPageStars} page-level stars &middot; ${totalBulletStars} bullet-level stars</div>
+  ${sections}
+</body>
+</html>`;
+  }
+
+  printBtn.addEventListener('click', () => {
+    const html = buildPrintHtml();
+    const win = window.open('', '_blank');
+    if (!win) {
+      alert('Please allow pop-ups to open the printable summary.');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
   });
 
   // ---------- socket events ----------
