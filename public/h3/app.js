@@ -10,12 +10,13 @@
   const LEVER = {}; D.LEVERS.forEach(l => LEVER[l.id] = l);
   const PILLAR = {}; D.PILLARS.forEach(p => PILLAR[p.id] = p);
   const OUTCOME = {}; D.OUTCOMES.forEach(o => OUTCOME[o.id] = o);
-  const GROUP = {}; D.GROUPS.forEach(g => GROUP[g.id] = g);
+  const SECTOR = {}; D.SECTORS.forEach(x => SECTOR[x.id] = x);
+  const DISC = {}; D.DISCIPLINES.forEach(x => DISC[x.id] = x);
   const byId = {}; D.nodes.forEach(n => byId[n.id] = n);
 
   const EDGE_KIND = {
     home:    { label: "Part of",       c: "#ffd166" },
-    employs: { label: "People",        c: "#8fa7d8" },
+    employs: { label: "Affiliation",   c: "#8fa7d8" },
     ally:    { label: "Close tie",     c: "#7ef2b0" },
     collab:  { label: "Working together", c: "#8ef1ff" },
     intro:   { label: "Path in",       c: "#ffb54d" },
@@ -23,7 +24,8 @@
     target:  { label: "Pursuing",      c: "#ff9ec4" },
     peer:    { label: "Peer to watch", c: "#7d8bad" }
   };
-  const SIZE = { P1: 1.0, P2: 0.76, P3: 0.58, P4: 0.46 };
+  const SIZE = { P1: 1.08, P2: 0.66, P3: 0.42, P4: 0.30 };
+  const FADE = { P1: 1, P2: .95, P3: .78, P4: .66 };
 
   /* ----------------------------------------------------------- avatars -- */
   function initials(name) {
@@ -37,7 +39,7 @@
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return Math.abs(h); }
   function monogram(node) {
     const h = hash(node.id);
-    const base = { core: 44, university: 214, field: 158, funder: 272 }[node.group] || 220;
+    const base = { research: 214, field: 152, funder: 274, other: 42 }[node.sector] || 220;
     const hue = (base + (h % 46) - 23 + 360) % 360;
     const isOrg = node.kind === "org";
     const a = `hsl(${hue},${isOrg ? 24 : 42}%,${isOrg ? 30 : 44}%)`;
@@ -87,14 +89,14 @@
   const pos = {}; P.forEach(p => pos[p.id] = p);
 
   const LOBE = {
-    core:       [0, 0, 0],
-    university: [-0.95, 0.42, -0.25],
-    field:      [0.88, -0.18, 0.42],
-    funder:     [0.02, -0.62, -0.95]
+    other:    [0, 0.05, 0],
+    research: [-0.95, 0.42, -0.25],
+    field:    [0.88, -0.18, 0.42],
+    funder:   [0.02, -0.62, -0.95]
   };
   const R = 430;
   P.forEach((p, i) => {
-    const l = LOBE[p.n.group] || [0, 0, 0];
+    const l = LOBE[p.n.sector] || [0, 0, 0];
     const j = i * 0.618;
     p.x = l[0] * R + (Math.sin(j * 7.1) * 130);
     p.y = l[1] * R + (Math.cos(j * 5.3) * 130);
@@ -116,7 +118,7 @@
           let d2 = dx * dx + dy * dy + dz * dz;
           if (d2 < 1) { d2 = 1; dx = Math.random() - .5; dy = Math.random() - .5; dz = Math.random() - .5; }
           const d = Math.sqrt(d2);
-          const f = 78000 / d2;
+          const f = 96000 / d2;
           const ux = dx / d, uy = dy / d, uz = dz / d;
           a.vx -= ux * f; a.vy -= uy * f; a.vz -= uz * f;
           b.vx += ux * f; b.vy += uy * f; b.vz += uz * f;
@@ -133,7 +135,7 @@
         b.vx -= ux * f; b.vy -= uy * f; b.vz -= uz * f;
       });
       P.forEach(p => {
-        const l = LOBE[p.n.group] || [0, 0, 0];
+        const l = LOBE[p.n.sector] || [0, 0, 0];
         const cx = l[0] * R, cy = l[1] * R, cz = l[2] * R;
         p.vx += (cx - p.x) * 0.0026 + (0 - p.x) * 0.0007;
         p.vy += (cy - p.y) * 0.0026 + (0 - p.y) * 0.0007;
@@ -175,20 +177,23 @@
       '<div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">' +
       '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>' +
       '<input id="q" type="search" placeholder="Search people, institutions" autocomplete="off" /></div>' +
+      '<button class="ghostbtn" id="densitybtn">Showing: everyone</button>' +
       '<button class="ghostbtn" id="labelbtn">Names: key</button>' +
       '<button class="ghostbtn" id="resetbtn">Reset view</button>' +
+      '<button class="ghostbtn" id="railbtn">Filters</button>' +
     '</div>' +
-    '<div class="chrome" id="note"><b>Proof of concept.</b> Entities come from the live Ecosystem Map. ' +
-      'Lever tags and most connections are invented for this demo, and portraits are placeholders ' +
-      'until real headshots and logos are loaded.</div>' +
+    '<div class="chrome" id="rail"><div class="railscroll">' +
+      '<div id="note"><b>Proof of concept.</b> Entities are real, from the live Ecosystem Map. ' +
+        'Tags and most connections are invented, and portraits are placeholders.</div>' +
+      '<div class="filtergroup"><div class="rowlabel">Sector <span>Sets the color families</span></div>' +
+        '<div class="chipwrap" id="grouprow"></div></div>' +
+      '<div class="filtergroup"><div class="rowlabel">Levers <span>Learning to Flourish Network</span></div>' +
+        '<div class="chipwrap" id="leverrow"></div></div>' +
+      '<div class="filtergroup"><div class="rowlabel">Discipline <span>Researchers and research institutions</span></div>' +
+        '<div class="chipwrap" id="discrow"></div></div>' +
+    '</div></div>' +
     '<div class="chrome" id="hint"><b>Drag</b> to orbit &nbsp; <b>Scroll</b> to zoom<br>' +
       '<b>Click</b> a node to open it and follow its threads</div>' +
-    '<div class="chrome" id="filters">' +
-      '<div class="filterrow" id="leverrow"><span class="rowlabel">Levers</span></div>' +
-      '<div class="filterrow" id="grouprow"><span class="rowlabel">Who</span></div>' +
-      '<div class="filterrow" id="pillarrow"><span class="rowlabel">Pillar</span>' +
-        '<span class="spacer"></span></div>' +
-    '</div>' +
     '<aside id="panel"><button class="panel-close" aria-label="Close">&times;</button>' +
       '<div class="panel-scroll" id="panelbody"></div></aside>' +
     '<div id="loader"><div class="l">Mapping the constellation</div></div>';
@@ -200,6 +205,7 @@
   const ectx = edgeCv.getContext("2d");
   const sctx = skyCv.getContext("2d");
   const panel = document.getElementById("panel");
+  const rail = document.getElementById("rail");
   const panelBody = document.getElementById("panelbody");
   const countEl = document.getElementById("count");
 
@@ -213,28 +219,37 @@
     parent.appendChild(b);
     return b;
   }
-  const state = { levers: new Set(), groups: new Set(), pillars: new Set(), q: "", sel: null, hot: null, labels: 1 };
-  const leverChips = {}, groupChips = {}, pillarChips = {};
+  const state = {
+    levers: new Set(), disc: new Set(), sectors: new Set(), kinds: new Set(),
+    q: "", sel: null, hot: null, labels: 1, density: 0
+  };
+  const DENSITY = [
+    { label: "Showing: everyone", keep: null },
+    { label: "Showing: key players", keep: { P1: 1, P2: 1 } },
+    { label: "Showing: anchors", keep: { P1: 1 } }
+  ];
 
   D.LEVERS.forEach(l => {
-    leverChips[l.id] = chip(document.getElementById("leverrow"), l.n, l.c, b => {
+    const c = chip(document.getElementById("leverrow"), l.n, l.c, b => {
       toggle(state.levers, l.id); b.classList.toggle("on"); apply();
     });
-    leverChips[l.id].title = l.s;
+    c.title = l.s;
   });
-  D.GROUPS.forEach(g => {
-    groupChips[g.id] = chip(document.getElementById("grouprow"), g.n, g.c, b => {
-      toggle(state.groups, g.id); b.classList.toggle("on"); apply();
+  D.DISCIPLINES.forEach(d => {
+    const c = chip(document.getElementById("discrow"), d.n, d.c, b => {
+      toggle(state.disc, d.id); b.classList.toggle("on"); apply();
     }, true);
+    c.title = "Tagged on researchers and research institutions";
+  });
+  D.SECTORS.forEach(x => {
+    const c = chip(document.getElementById("grouprow"), x.n, x.c, b => {
+      toggle(state.sectors, x.id); b.classList.toggle("on"); apply();
+    }, true);
+    c.title = x.d;
   });
   ["person", "org"].forEach(k => {
-    groupChips[k] = chip(document.getElementById("grouprow"), k === "person" ? "People" : "Institutions", "#9fb3d9", b => {
-      toggle(state.groups, k); b.classList.toggle("on"); apply();
-    }, true);
-  });
-  D.PILLARS.forEach(p => {
-    pillarChips[p.id] = chip(document.getElementById("pillarrow"), p.n, p.c, b => {
-      toggle(state.pillars, p.id); b.classList.toggle("on"); apply();
+    chip(document.getElementById("grouprow"), k === "person" ? "People" : "Institutions", "#9fb3d9", b => {
+      toggle(state.kinds, k); b.classList.toggle("on"); apply();
     }, true);
   });
   function toggle(set, v) { set.has(v) ? set.delete(v) : set.add(v); }
@@ -243,17 +258,17 @@
   const els = {};
   D.nodes.forEach(n => {
     const el = document.createElement("div");
-    el.className = "node " + n.kind + " " + n.group + (n.pri === "P1" ? " named" : "");
-    el.style.setProperty("--hc", GROUP[n.group].c);
+    el.className = "node " + n.kind + " " + n.sector + " " + n.pri + (n.pri === "P1" ? " named" : "");
+    el.dataset.id = n.id;
+    el.style.setProperty("--hc", SECTOR[n.sector].c);
     const disc = document.createElement("div"); disc.className = "disc";
     disc.appendChild(makeImg(n));
     const halo = document.createElement("div"); halo.className = "halo";
     const lab = document.createElement("div"); lab.className = "label";
     lab.innerHTML = esc(n.name) + '<span class="sublabel">' + esc(n.role || "") + "</span>";
     el.appendChild(halo); el.appendChild(disc); el.appendChild(lab);
-    el.addEventListener("pointerenter", () => { if (!drag.moved) { state.hot = n.id; apply(); } });
+    el.addEventListener("pointerenter", () => { if (!drag.on) { state.hot = n.id; apply(); } });
     el.addEventListener("pointerleave", () => { if (state.hot === n.id) { state.hot = null; apply(); } });
-    el.addEventListener("click", ev => { ev.stopPropagation(); if (!drag.moved) select(n.id); });
     layer.appendChild(el);
     els[n.id] = el;
   });
@@ -264,7 +279,12 @@
   const want = { yaw: 0.5, pitch: -0.22, dist: 1150, tx: 0, ty: 0, tz: 0 };
   let W = 0, H = 0, dpr = 1, spin = true, lastUser = 0;
 
-  function fitDist() { return Math.max(950, Math.min(2400, 1150 * (1280 / Math.max(560, W)))); }
+  function effW() {
+    const l = (W > 900 && rail && !rail.classList.contains("closed")) ? 262 : 0;
+    const r = (panel && panel.classList.contains("open") && W > 900) ? 388 : 0;
+    return Math.max(320, W - l - r);
+  }
+  function fitDist() { return Math.max(950, Math.min(2400, 1150 * (1280 / Math.max(560, effW())))); }
   function resize() {
     W = stage.clientWidth; H = stage.clientHeight; dpr = Math.min(window.devicePixelRatio || 1, 2);
     [edgeCv, skyCv].forEach(c => { c.width = W * dpr; c.height = H * dpr; c.style.width = W + "px"; c.style.height = H + "px"; });
@@ -319,15 +339,12 @@
 
   /* ------------------------------------------------------------- filters -- */
   function matches(n) {
+    const keep = DENSITY[state.density].keep;
+    if (keep && !keep[n.pri] && n.id !== state.sel) return false;
     if (state.levers.size) { if (!n.levers.some(l => state.levers.has(l))) return false; }
-    if (state.pillars.size) { if (!n.pillars.some(p => state.pillars.has(p))) return false; }
-    if (state.groups.size) {
-      const g = state.groups;
-      const groupSel = ["core", "university", "field", "funder"].filter(x => g.has(x));
-      const kindSel = ["person", "org"].filter(x => g.has(x));
-      if (groupSel.length && groupSel.indexOf(n.group) === -1) return false;
-      if (kindSel.length && kindSel.indexOf(n.kind) === -1) return false;
-    }
+    if (state.disc.size) { if (!n.disc.some(d => state.disc.has(d))) return false; }
+    if (state.sectors.size && !state.sectors.has(n.sector)) return false;
+    if (state.kinds.size && !state.kinds.has(n.kind)) return false;
     if (state.q) {
       const q = state.q.toLowerCase();
       const hay = (n.name + " " + (n.role || "") + " " + (n.blurb || "")).toLowerCase();
@@ -352,7 +369,7 @@
     let r = 0;
     set.forEach(n => { const p = pos[n.id]; r = Math.max(r, Math.hypot(p.x - cx, p.y - cy, p.z - cz)); });
     want.tx = cx; want.ty = cy; want.tz = cz;
-    want.dist = Math.max(430, Math.min(1900, (r * 1.9 + 240) * (1280 / Math.max(700, W))));
+    want.dist = Math.max(430, Math.min(1900, (r * 1.9 + 240) * (1280 / Math.max(640, effW()))));
   }
   function apply() {
     let count = 0;
@@ -369,9 +386,11 @@
       el.classList.toggle("hot", state.hot === n.id || (!!focus && m && !!near[n.id] && n.id !== state.sel));
       el.classList.toggle("sel", state.sel === n.id);
       const lv = n.levers.find(l => state.levers.has(l));
-      el.style.setProperty("--hc", lv ? LEVER[lv].c : GROUP[n.group].c);
+      const dc = n.disc.find(d => state.disc.has(d));
+      el.style.setProperty("--hc", lv ? LEVER[lv].c : (dc ? DISC[dc].c : SECTOR[n.sector].c));
     });
-    const filtering = !!(state.levers.size || state.pillars.size || state.groups.size || state.q);
+    const filtering = !!(state.levers.size || state.disc.size || state.sectors.size ||
+      state.kinds.size || state.q || state.density);
     D.nodes.forEach(n => {
       els[n.id].classList.toggle("named",
         (filtering && vis[n.id] && count <= 42) ||
@@ -393,7 +412,9 @@
     cam.ty += (want.ty - cam.ty) * .07;
     cam.tz += (want.tz - cam.tz) * .07;
 
-    wantCenterX = (panel.classList.contains("open") && W > 900) ? (W - 388) / 2 : W / 2;
+    const leftPad = (W > 900 && !rail.classList.contains("closed")) ? 262 : 0;
+    const rightPad = (panel.classList.contains("open") && W > 900) ? 388 : 0;
+    wantCenterX = leftPad + (W - leftPad - rightPad) / 2;
     centerX += (wantCenterX - centerX) * .08;
     project(t);
     const focus = state.sel || state.hot;
@@ -444,7 +465,7 @@
         (el.classList.contains("sel") || el.classList.contains("hot") || el.classList.contains("named"));
       if (wants) labelQueue.push({ el: lab, o: o, w: Math.max(p.n.name.length * 6.6, (p.n.role || "").length * 5.4) + 16, sel: el.classList.contains("sel") });
       else lab.style.visibility = "hidden";
-      const fog = Math.max(.2, Math.min(1, 1 - (o.zc - cam.dist) / 900));
+      const fog = Math.max(.2, Math.min(1, 1 - (o.zc - cam.dist) / 900)) * (FADE[p.n.pri] || 1);
       el.style.opacity = el.classList.contains("dim") ? .08 : (el.classList.contains("ghost") ? .13 * fog : fog);
     }
     // Label collision culling: nearest label wins its patch of screen.
@@ -465,15 +486,21 @@
   }
 
   /* -------------------------------------------------------- interaction -- */
-  const drag = { on: false, moved: false, x: 0, y: 0 };
+  /* Selection runs off pointerdown/up rather than click: the stage captures the
+     pointer for orbiting, which would otherwise swallow the click on a node. */
+  const drag = { on: false, moved: false, x: 0, y: 0, downX: 0, downY: 0, node: null };
   stage.addEventListener("pointerdown", e => {
-    drag.on = true; drag.moved = false; drag.x = e.clientX; drag.y = e.clientY;
-    stage.classList.add("dragging"); stage.setPointerCapture(e.pointerId);
+    const hit = e.target.closest ? e.target.closest(".node") : null;
+    drag.on = true; drag.moved = false;
+    drag.x = drag.downX = e.clientX; drag.y = drag.downY = e.clientY;
+    drag.node = hit && !hit.classList.contains("dim") ? hit.dataset.id : null;
+    stage.classList.add("dragging");
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* no capture, fine */ }
   });
   stage.addEventListener("pointermove", e => {
     if (!drag.on) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (Math.hypot(e.clientX - drag.downX, e.clientY - drag.downY) > 6) drag.moved = true;
     want.yaw -= dx * 0.0055;
     want.pitch = Math.max(-1.25, Math.min(1.25, want.pitch + dy * 0.0045));
     drag.x = e.clientX; drag.y = e.clientY; lastUser = Date.now();
@@ -481,14 +508,11 @@
   function endDrag(e) {
     if (!drag.on) return;
     drag.on = false; stage.classList.remove("dragging");
-    setTimeout(() => { drag.moved = false; }, 30);
+    if (!drag.moved) select(drag.node || null);
+    drag.node = null;
   }
   stage.addEventListener("pointerup", endDrag);
-  stage.addEventListener("pointercancel", endDrag);
-  stage.addEventListener("click", e => {
-    if (drag.moved) return;
-    if (e.target === stage || e.target.tagName === "CANVAS") select(null);
-  });
+  stage.addEventListener("pointercancel", () => { drag.on = false; drag.node = null; stage.classList.remove("dragging"); });
   stage.addEventListener("wheel", e => {
     e.preventDefault();
     want.dist = Math.max(260, Math.min(2400, want.dist * (1 + Math.sign(e.deltaY) * 0.1)));
@@ -508,6 +532,21 @@
   document.getElementById("q").addEventListener("input", e => { state.q = e.target.value.trim(); apply(); });
   document.getElementById("resetbtn").addEventListener("click", () => {
     want.dist = fitDist(); want.tx = want.ty = want.tz = 0; want.pitch = -0.22; select(null);
+  });
+  const railBtn = document.getElementById("railbtn");
+  railBtn.addEventListener("click", () => {
+    rail.classList.toggle("closed");
+    railBtn.classList.toggle("on", !rail.classList.contains("closed"));
+    if (!state.sel) { frameKey = ""; apply(); }
+  });
+  if (window.innerWidth <= 900) rail.classList.add("closed");
+  else railBtn.classList.add("on");
+  const densityBtn = document.getElementById("densitybtn");
+  densityBtn.addEventListener("click", () => {
+    state.density = (state.density + 1) % DENSITY.length;
+    densityBtn.textContent = DENSITY[state.density].label;
+    densityBtn.classList.toggle("on", state.density > 0);
+    apply();
   });
   const labelBtn = document.getElementById("labelbtn");
   labelBtn.addEventListener("click", () => {
@@ -548,7 +587,7 @@
     html += '<div class="p-meta">' +
       '<span class="pill ' + n.status + '">' + n.status + "</span>" +
       '<span class="pill">' + n.pri + "</span>" +
-      '<span class="pill" style="color:' + GROUP[n.group].c + ';border-color:' + GROUP[n.group].c + '55">' + GROUP[n.group].n + "</span>" +
+      '<span class="pill" style="color:' + SECTOR[n.sector].c + ';border-color:' + SECTOR[n.sector].c + '55">' + SECTOR[n.sector].n + "</span>" +
       (n.home && byId[n.home] ? '<span class="pill">' + esc(byId[n.home].name) + "</span>" : "") +
       "</div>";
 
@@ -559,8 +598,13 @@
         n.levers.map(l => '<span class="tag" style="--c:' + LEVER[l].c + '"><span class="dot"></span>' + esc(LEVER[l].n) + "</span>").join("") +
         "</div></div>";
     }
+    if (n.disc.length) {
+      html += '<div class="p-sec"><h3>Disciplines</h3><div class="tagwrap">' +
+        n.disc.map(d => '<span class="tag" style="--c:' + DISC[d].c + '"><span class="dot"></span>' + esc(DISC[d].n) + "</span>").join("") +
+        "</div></div>";
+    }
     if (n.pillars.length || n.outcomes.length) {
-      html += '<div class="p-sec"><h3>Pillars and outcomes</h3><div class="tagwrap">' +
+      html += '<div class="p-sec"><h3>H3 pillars and outcomes</h3><div class="tagwrap">' +
         n.pillars.map(p => '<span class="tag" style="--c:' + PILLAR[p].c + '"><span class="dot"></span>' + esc(PILLAR[p].n) + "</span>").join("") +
         n.outcomes.map(o => '<span class="tag" style="--c:#8fa7d8"><span class="dot"></span>' + esc(OUTCOME[o].n) + "</span>").join("") +
         "</div></div>";

@@ -606,6 +606,126 @@
     "Named in the landscape map as humanics-aligned, and adjacent to Brooke's consortium work.",
     ["L6","L9"], ["sustainability"], ["democracy"], "carnegie.org");
 
+
+  /* ------------------------------------------------- SECTOR & DISCIPLINE -- */
+  /* Sector shapes the color families. Research: studies it. Field: student,
+     teacher or system-leader facing. Funder: moves the capital. Other: the
+     conveners, advisors and voices that fit none of the three cleanly. */
+
+  const DISCIPLINES = [
+    { id: "transdisciplinary", n: "Transdisciplinary",      c: "#ffd166" },
+    { id: "cogsci",            n: "Cognitive science",      c: "#63b3ff" },
+    { id: "devpsych",          n: "Developmental psych",    c: "#7ee081" },
+    { id: "edpsych",           n: "Educational psych",      c: "#4fd1c5" },
+    { id: "motivation",        n: "Motivation science",     c: "#ffb02e" },
+    { id: "identity",          n: "Identity development",   c: "#e07fe0" },
+    { id: "learnsci",          n: "Learning sciences",      c: "#8ef1ff" },
+    { id: "humandev",          n: "Human development",      c: "#ff9ec4" },
+    { id: "sociology",         n: "Sociology",              c: "#ff7a59" },
+    { id: "orgpsych",          n: "Organizational psych",   c: "#9f8cff" },
+    { id: "systems",           n: "Systems & design",       c: "#68e0a0" }
+  ];
+
+  const SECTORS = [
+    { id: "research", n: "Research", c: "#6fb1ff", d: "Universities, labs, research shops and the people inside them" },
+    { id: "field",    n: "Field",    c: "#68e0a0", d: "Student, teacher and system-leader facing" },
+    { id: "funder",   n: "Funder",   c: "#c79bff", d: "Where the capital sits" },
+    { id: "other",    n: "Other",    c: "#ffd166", d: "Conveners, advisors, voices and LearnerStudio itself" }
+  ];
+
+  const SECTOR_OF = {
+    research: ["northeastern","stanford","penn","harvard","vanderbilt","baylor","mit","minerva",
+      "bank-street","notre-dame","cornell-psix","stanford-accelerator","harvard-hfp","baylor-ighf",
+      "george-mason","asu","usc","oxford","connie-yowell","mitchell-stevens","michael-golden",
+      "zachary-herrmann","danielle-allen","shawn-ginwright","isabelle-hau","tony-burrow",
+      "thema-monroe-white","matthew-lee","mike-magee","jal-mehta","human-potential-lab","pam-cantor",
+      "full-scale","beth-holland","carnegie-foundation","brooke-stafford-brizard","ncme","susan-lyons",
+      "ets-ri","genai-evidence-hub","john-whitmer","brookings","rebecca-winthrop","air","jack-buckley",
+      "aerdf","temple-lovelace","ihf","ccr","charles-fadel","hastings-bowdoin","chris-agnew"],
+    field: ["rithm","michelle-culver","nate-kerr","playlab","yusuf-ahmad","caroline-vander-ark",
+      "transcend","aylon-samouha","lavada-berger","design-commons","valor","daren-dickson",
+      "high-tech-high","ben-daily","big-picture","teen-flourishing","mike-goldstein","cie-osi",
+      "doannie-tran","isdl","caleb","forest-school","tyler-thigpen","xq","ncee","vicki-phillips",
+      "celo","edsafe","history-colab","fernande-raine","purpose-commons","teray-esquibel","oko-labs",
+      "mat-miller","tn-score","forum-youth","karen-pittman","merita-irby","gerard-senehi",
+      "colorado-imperative"],
+    funder: ["gerald-chan","jenn-holleran","schwab-foundation","katie-schwab","lemnis",
+      "openai-foundation","anya-manki","stuart-foundation","peter-ross","sophie-stuart",
+      "spencer-foundation","valhalla","sarah-valhalla","richard-robertson","templeton","barra",
+      "ron-conway","gates-foundation","walton","amber-oliver","hewlett","ash-hewlett",
+      "bezos-philanthropy","bill-hight","carnegie-corp"],
+    other: ["h3-institute","learnerstudio","lfn","hawthorn","kim-smith","victor-reinoso",
+      "cassie-crockett","courtney-garcia","babak-mostaghimi","gwen-baker","melanie-dukes",
+      "katherine-moore","mk-romagnoli","stephanie-distasio","jon-hanover","kent-mcguire",
+      "jim-collins","milken","fli","jenny-anderson"]
+  };
+
+  /* Disciplines are a research read, so they are only placed on researchers and
+     research institutions (plus the Institute itself, which is the whole point). */
+  const DISC_OF = {
+    "h3-institute": ["transdisciplinary","learnsci","humandev"],
+    "northeastern": ["learnsci","edpsych","systems"],
+    "stanford": ["sociology","learnsci","humandev"],
+    "penn": ["edpsych","orgpsych"],
+    "harvard": ["humandev","sociology"],
+    "harvard-hfp": ["humandev","identity"],
+    "vanderbilt": ["edpsych","learnsci"],
+    "baylor": ["humandev","identity"],
+    "baylor-ighf": ["humandev","identity"],
+    "mit": ["cogsci","systems"],
+    "minerva": ["learnsci","cogsci"],
+    "bank-street": ["devpsych","edpsych"],
+    "notre-dame": ["identity","humandev"],
+    "cornell-psix": ["devpsych","identity","motivation"],
+    "stanford-accelerator": ["learnsci","devpsych"],
+    "george-mason": ["systems","sociology"],
+    "asu": ["devpsych","edpsych"],
+    "usc": ["cogsci","devpsych"],
+    "oxford": ["orgpsych","systems"],
+    "connie-yowell": ["learnsci","systems"],
+    "mitchell-stevens": ["sociology","humandev"],
+    "michael-golden": ["orgpsych","systems"],
+    "zachary-herrmann": ["orgpsych","edpsych"],
+    "danielle-allen": ["sociology","identity"],
+    "shawn-ginwright": ["sociology","humandev"],
+    "isabelle-hau": ["devpsych","learnsci"],
+    "tony-burrow": ["devpsych","identity","motivation"],
+    "thema-monroe-white": ["systems","sociology"],
+    "matthew-lee": ["humandev","sociology"],
+    "mike-magee": ["learnsci","orgpsych"],
+    "jal-mehta": ["sociology","edpsych","orgpsych"],
+    "human-potential-lab": ["devpsych","cogsci","humandev"],
+    "pam-cantor": ["devpsych","cogsci","humandev"],
+    "full-scale": ["learnsci","edpsych"],
+    "beth-holland": ["learnsci","edpsych"],
+    "carnegie-foundation": ["humandev","systems","edpsych"],
+    "brooke-stafford-brizard": ["humandev","devpsych"],
+    "ncme": ["edpsych","systems"],
+    "susan-lyons": ["edpsych","systems"],
+    "ets-ri": ["edpsych","cogsci"],
+    "genai-evidence-hub": ["learnsci","systems"],
+    "john-whitmer": ["learnsci","systems"],
+    "brookings": ["sociology","motivation"],
+    "rebecca-winthrop": ["sociology","motivation"],
+    "air": ["edpsych","sociology"],
+    "jack-buckley": ["edpsych","sociology"],
+    "aerdf": ["learnsci","systems"],
+    "temple-lovelace": ["learnsci","systems"],
+    "ihf": ["humandev","identity"],
+    "ccr": ["transdisciplinary","learnsci","systems"],
+    "charles-fadel": ["transdisciplinary","learnsci","systems"],
+    "hastings-bowdoin": ["transdisciplinary","cogsci","sociology"],
+    "chris-agnew": ["learnsci","systems"],
+    "gwen-baker": ["learnsci","systems","transdisciplinary"]
+  };
+
+  const sectorIndex = {};
+  Object.keys(SECTOR_OF).forEach(k => SECTOR_OF[k].forEach(id => sectorIndex[id] = k));
+  nodes.forEach(n => {
+    n.sector = sectorIndex[n.id] || "other";
+    n.disc = DISC_OF[n.id] || [];
+  });
+
   /* ---------------------------------------------------------------- EDGES -- */
   const edges = [];
   function E(s, t, type, label, w) { edges.push({ s, t, type, label: label || "", w: w || 1 }); }
@@ -803,5 +923,5 @@
   E("ron-conway","h3-institute","peer","Arc Institute is the closest live precedent",1);
 
   /* ------------------------------------------------------------------------ */
-  window.H3DATA = { nodes, edges, LEVERS, PILLARS, OUTCOMES, GROUPS };
+  window.H3DATA = { nodes, edges, LEVERS, PILLARS, OUTCOMES, GROUPS, SECTORS, DISCIPLINES };
 })();
